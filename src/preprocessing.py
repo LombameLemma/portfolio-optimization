@@ -1,14 +1,42 @@
+from pathlib import Path
 import pandas as pd
 
-def load_prices(path="data/raw"):
-    tsla = pd.read_csv(f"{path}/TSLA.csv", index_col=0, parse_dates=True)
-    spy = pd.read_csv(f"{path}/SPY.csv", index_col=0, parse_dates=True)
-    bnd = pd.read_csv(f"{path}/BND.csv", index_col=0, parse_dates=True)
+TICKERS = ["TSLA", "SPY", "BND"]
 
-    prices = pd.DataFrame({
-        "TSLA": tsla["Adj Close"],
-        "SPY": spy["Adj Close"],
-        "BND": bnd["Adj Close"]
-    }).dropna()
 
+def load_prices(raw_dir="data/raw", tickers=None):
+    """Load asset price data from the local CSV files."""
+    if tickers is None:
+        tickers = TICKERS
+
+    frames = {}
+    for ticker in tickers:
+        path = Path(raw_dir) / f"{ticker}.csv"
+        if not path.exists():
+            raise FileNotFoundError(f"Missing data file: {path}")
+
+        df = pd.read_csv(
+            path,
+            header=None,
+            skiprows=[0, 1, 2],
+            names=["Date", "Adj Close", "Close", "High", "Low", "Open", "Volume"],
+        )
+        df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+        df = df.dropna(subset=["Date"]).copy()
+        df = df[["Date", "Adj Close", "Close", "High", "Low", "Open", "Volume"]]
+        for col in ["Adj Close", "Close", "High", "Low", "Open", "Volume"]:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        df = df.set_index("Date").sort_index()
+        frames[ticker] = df["Adj Close"]
+
+    prices = pd.concat(frames, axis=1).dropna().rename(columns={
+        "TSLA": "TSLA",
+        "SPY": "SPY",
+        "BND": "BND",
+    })
     return prices
+
+
+def compute_returns(prices):
+    """Return daily percentage changes for each asset."""
+    return prices.pct_change().dropna()
